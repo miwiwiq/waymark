@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Dark mode follows html[data-theme], set before first paint from the saved
+   choice or the system setting (W5). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --background: #fafaf9;
+  --foreground: #1c1917;
+  /* Waymark orange: the painted trail markers and small accents. */
+  --trail: #ea580c;
+  /* Native controls (date pickers, selects) follow the theme too. */
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --background: #0c0c0d;
+  --foreground: #ededed;
+  --trail: #fb923c;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-trail: var(--trail);
+  /* The flag font comes first but covers only flags (see layout.tsx). */
+  --font-sans: var(--font-flags), var(--font-manrope), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --font-display: var(--font-lora), ui-serif, Georgia, serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}

@@ -1,0 +1,200 @@
+name: waymark
+
+# Every variable has a dev default, so `docker compose up` works without a .env.
+# Override them in .env (see .env.example).
+
+services:
+  gateway:
+    image: nginx:1.30-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [web, auth, users, posts, feed]
+
+  web:
+    build: ./web
+    environment:
+      INTERNAL_API_URL: http://gateway
+
+  auth:
+    build:
+      context: ./backend
+      dockerfile: apps/auth/Dockerfile
+    environment:
+      DATABASE_URL: postgres://auth:${AUTH_DB_PASSWORD:-auth}@auth-db:5432/auth
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-waymark}:${RABBITMQ_PASSWORD:-waymark}@rabbitmq:5672
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+      OAUTH_SESSION_SECRET: ${OAUTH_SESSION_SECRET:-dev-oauth-session-secret-change-me}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+    depends_on:
+      auth-db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  users:
+    build:
+      context: ./backend
+      dockerfile: apps/users/Dockerfile
+    environment:
+      DATABASE_URL: postgres://users:${USERS_DB_PASSWORD:-users}@users-db:5432/users
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-waymark}:${RABBITMQ_PASSWORD:-waymark}@rabbitmq:5672
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+    depends_on:
+      users-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  posts:
+    build:
+      context: ./backend
+      dockerfile: apps/posts/Dockerfile
+    environment:
+      MONGO_URL: mongodb://${MONGO_USER:-waymark}:${MONGO_PASSWORD:-waymark}@mongo:27017/posts?authSource=admin
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-waymark}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-waymark-secret}
+      S3_BUCKET: waymark-media
+      USERS_INTERNAL_URL: http://users:3000
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+    depends_on:
+      mongo: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+
+  feed:
+    build:
+      context: ./backend
+      dockerfile: apps/feed/Dockerfile
+    environment:
+      DATABASE_URL: postgres://feed:${FEED_DB_PASSWORD:-feed}@feed-db:5432/feed
+      REDIS_URL: redis://redis:6379/1
+      USERS_INTERNAL_URL: http://users:3000
+      POSTS_INTERNAL_URL: http://posts:3000
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      POPULAR_FOLLOWER_THRESHOLD: ${POPULAR_FOLLOWER_THRESHOLD:-2}
+    depends_on:
+      feed-db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  auth-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
+      POSTGRES_DB: auth
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth -d auth"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  users-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: users
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:-users}
+      POSTGRES_DB: users
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U users -d users"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  feed-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: feed
+      POSTGRES_PASSWORD: ${FEED_DB_PASSWORD:-feed}
+      POSTGRES_DB: feed
+    volumes:
+      - feed-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feed -d feed"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-waymark}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-waymark}
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.3-management-alpine
+    # RabbitMQ keys its data directory by node name, so keep the hostname fixed.
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-waymark}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-waymark}
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # MinIO's official images were withdrawn; pgsty maintains a community build.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-waymark}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-waymark-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Creates the (private) media bucket once MinIO is up, then exits.
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-waymark}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-waymark-secret}
+    entrypoint:
+      - sh
+      - -c
+      - mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/waymark-media
+    depends_on:
+      minio: { condition: service_healthy }
+
+volumes:
+  auth-db-data:
+  users-db-data:
+  feed-db-data:
+  mongo-data:
+  rabbitmq-data:
+  minio-data:
