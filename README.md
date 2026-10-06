@@ -25,7 +25,7 @@ Open **http://localhost:8080**. The first build takes a few minutes.
 **Checks**
 
 - `scripts/smoke.sh` (needs `curl` and `jq`) runs the main flows through the gateway against the running stack: two users, a private follow with request and accept, a real pre-signed upload, create and edit, 404 for a non-follower, the feed, likes and comments, archive and unarchive, token refresh and logout.
-- `cd backend && npm ci && npm test` runs the unit tests: follow rules, the cursor format, and the feed merge paging a fixed dataset with no gaps or duplicates.
+- `cd backend && npm ci && npm test` runs the unit tests: follow rules, the cursor format, the event retry policy, and the feed merge paging a fixed dataset with no gaps or duplicates.
 
 ## Architecture
 
@@ -47,7 +47,7 @@ flowchart LR
   posts --- mongo[(MongoDB)]
   posts --- minio
   posts -->|"internal HTTP: username, can-view"| users
-  feed -->|"internal HTTP: following"| users
+  feed -->|"internal HTTP: following, username"| users
   feed -->|"internal HTTP: posts by authors, can-view"| posts
   feed --- feeddb[(Postgres)]
   feed ---|"db 1: cache"| redis
@@ -79,6 +79,7 @@ The full log with reasons is [docs/decisions.md](docs/decisions.md); the IDs bel
 
 **Following the clarifications**
 
+- **The spec's diagram isn't taken literally** (clarification 7). It links Auth and Users directly, which clarification 7 says isn't needed, and it places RabbitMQ beside Post and Feed, though the spec's text uses the broker only for `user.created` and has Feed ask Users and Posts directly. We follow the text: Feed calls Users and Posts over internal HTTP, and RabbitMQ carries one event (A5).
 - **MinIO instead of S3** (clarification 2). Uploads use real pre-signed URLs, and the code only talks to the S3 API. MinIO runs from the community `pgsty/minio` image, because MinIO withdrew its official images (**deviation**, A7).
 - **Google login is optional** (clarification 2). The strategy is registered only when both keys are set (I6).
 - **User Service owns the profile** (clarification 7). Auth stores only email, password hash and Google id. The username and date of birth travel in `user.created` (I1, I5).
@@ -95,7 +96,7 @@ The full log with reasons is [docs/decisions.md](docs/decisions.md); the IDs bel
 - **Usernames can't change once set** (I2), because posts and comments copy the author's username.
 - **Incomplete profiles** (I7, I8). New Google users, and signups whose username was taken in the meantime, choose a username on `/onboarding`. Signup and onboarding check availability as you type and suggest free variants.
 - **No automatic account linking** (I6). If a Google email already has a password account, the user is sent to log in with the password. Email signup doesn't verify addresses, so linking could hand over the Google user's account.
-- **Events** (A5). Only `user.created` goes over RabbitMQ, through one durable queue. A failing message is retried 3 times, then dead-lettered. Profile creation is idempotent.
+- **Events** (A5). Only `user.created` goes over RabbitMQ, through one durable queue. A malformed message goes straight to a dead-letter queue. Any other failure, such as Users' database being down, is retried with backoff and requeued until it succeeds, so an outage delays a new profile but never loses it. Profile creation is idempotent.
 - **Internal calls** (A6). Plain HTTP on the Docker network with a 2 s timeout; failures become 503.
 - **Degradation** (F4). Post pages render without likes and comments if Feed is down. Feed falls back to Postgres and Post Service if Redis is down.
 - **Post location** (P1). The country is an ISO code chosen from a list, shown with its name and flag; coordinates come from a "Find on map" lookup of the city (OpenStreetMap Nominatim) instead of being typed.

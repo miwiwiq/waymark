@@ -52,13 +52,28 @@ export function usersEventsConsumer(url: string): RmqOptions {
   };
 }
 
-const ATTEMPTS = 3;
+/**
+ * A message no retry can fix, such as a malformed payload. handleWithRetry
+ * sends it straight to the DLQ.
+ */
+export class InvalidMessageError extends Error {}
+
+// 10 attempts with delays of 1, 2, 4, 8, 16, then 30 s: about 2.5 minutes per
+// delivery, far below RabbitMQ's 30-minute acknowledgement timeout.
+const ATTEMPTS_PER_DELIVERY = 10;
+const FIRST_DELAY_MS = 1000;
+const MAX_DELAY_MS = 30_000;
 const logger = new Logger('Messaging');
 
 /**
- * Runs an event handler with manual acks: up to 3 attempts, then the message
- * is rejected into the DLQ. Nest doesn't reject a message when a handler
- * throws, so every path here must ack or nack.
+ * Runs an event handler with manual acks (decision A5). Nest doesn't reject a
+ * message when a handler throws, so every path here must ack or nack.
+ *
+ * An InvalidMessageError goes to the DLQ at once. Any other failure, typically
+ * an unreachable database, is retried with exponential backoff; if it still
+ * fails, the message goes back to the queue and is retried again on
+ * redelivery. It is never dropped, so an outage delays the work but doesn't
+ * lose it.
  */
 export async function handleWithRetry(
   context: RmqContext,
@@ -66,22 +81,30 @@ export async function handleWithRetry(
 ): Promise<void> {
   const channel = context.getChannelRef() as Channel;
   const message = context.getMessage() as Message;
+  const pattern = context.getPattern();
 
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= ATTEMPTS_PER_DELIVERY; attempt++) {
     try {
       await handler();
       channel.ack(message);
       return;
     } catch (error) {
+      if (error instanceof InvalidMessageError) {
+        logger.error(`${pattern} rejected into ${USERS_EVENTS_DLQ}: ${error.message}`);
+        await channel.assertQueue(USERS_EVENTS_DLQ, { durable: true });
+        channel.nack(message, false, false);
+        return;
+      }
       logger.warn(
-        `${context.getPattern()} attempt ${attempt}/${ATTEMPTS} failed: ${String(error)}`,
+        `${pattern} attempt ${attempt}/${ATTEMPTS_PER_DELIVERY} failed: ${String(error)}`,
       );
-      if (attempt < ATTEMPTS) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      if (attempt < ATTEMPTS_PER_DELIVERY) {
+        const delay = Math.min(FIRST_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS);
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
 
-  await channel.assertQueue(USERS_EVENTS_DLQ, { durable: true });
-  channel.nack(message, false, false);
+  logger.warn(`${pattern} still failing after ${ATTEMPTS_PER_DELIVERY} attempts; requeued`);
+  channel.nack(message, false, true);
 }

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { logout } from "@/lib/api";
 import type { MyProfile } from "@/lib/profile";
-import { ThemeSwitch } from "./theme-switch";
 import { Avatar, FormError } from "./ui";
 import { usePendingRequestCount } from "@/lib/users";
 

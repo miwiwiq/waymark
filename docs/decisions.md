@@ -17,9 +17,11 @@ Requirements come from [assignment.md](assignment.md): the spec plus the assesso
 - **A4. Schema changes.** TypeORM migrations run when a service starts; `synchronize` is off.
 - **A5. Events.** Only `user.created` travels over RabbitMQ (Auth → Users), using NestJS's built-in RabbitMQ transport.
   - One durable queue, `users_events`, declared with the same options by publisher and consumer, so a message sent before Users first starts is kept.
-  - Users acknowledges a message after handling it. A failing handler is retried 3 times in-process; then the message is rejected into `users_events.dlq`. Handling is idempotent (I5).
+  - Users acknowledges a message after handling it. Handling is idempotent (I5).
+  - A malformed payload is rejected into `users_events.dlq` at once, since no retry can fix it. Any other failure, typically Users' database being unreachable, is retried in-process with exponential backoff (10 attempts, about 2.5 minutes, far below RabbitMQ's 30-minute acknowledgement timeout); if it still fails, the message is requeued and the cycle repeats on redelivery. *Why:* dead-lettering after a few seconds turned a short database outage into a user with no profile and no way to get one. *Trade-off:* a bug in the handler makes a message cycle, logging a warning per attempt, until the fix is deployed; then it is processed with nothing to replay by hand.
   - Auth publishes after saving the account and doesn't wait for the broker (L5).
   - *Why so little:* the spec uses RabbitMQ for this one event, which has one consumer. A topic exchange pays off once an event has several consumers.
+  - *The spec's diagram* also places RabbitMQ beside Post and Feed. We follow the text, which uses the broker for this one event and has Feed ask the Relation and Post Services directly. The diagram isn't literal elsewhere either: it links Auth and Users directly, which clarification 7 says isn't needed. Post events over RabbitMQ would only shorten the popular-author cache's staleness (L11).
 - **A6. Internal calls.** Plain HTTP over the Docker network with a 2 s timeout; failures become 503. No service-to-service auth (L6).
 - **A7. MinIO image — deviation.** MinIO runs from `pgsty/minio` (with `pgsty/mc` for bucket setup), a maintained community build pinned to a release tag. *Why:* MinIO withdrew its official images from Docker Hub and quay.io, and archived its repositories. The S3 code only talks to the S3 API, so switching images, or moving to real S3, needs no code change.
 
@@ -71,7 +73,7 @@ Requirements come from [assignment.md](assignment.md): the spec plus the assesso
 
 ## Quality
 
-- **Q1.** class-validator on every DTO, rejecting unknown fields. Swagger per service at `/api/<service>/docs`. Unit tests for the follow rules, the cursor format and the feed merge, including paging a fixed dataset with no gaps or duplicates. `scripts/smoke.sh` runs the main flows through the gateway.
+- **Q1.** class-validator on every DTO, rejecting unknown fields. Swagger per service at `/api/<service>/docs`. Unit tests for the follow rules, the cursor format, the event retry policy and the feed merge, including paging a fixed dataset with no gaps or duplicates. `scripts/smoke.sh` runs the main flows through the gateway.
 
 ## Known limitations
 

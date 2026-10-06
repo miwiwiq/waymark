@@ -81,7 +81,7 @@ With Google, the callback logs in a known Google account. For a new one it creat
 
 ### 1. Identity
 - Auth: accounts migration; Passport local strategy with argon2 hashes; Passport Google strategy (only when keys are set) with the `state` check and no account linking (I6); access and refresh JWTs with separate secrets (I3); refresh cookie; refresh; logout; `user.created` published after saving.
-- `libs/common`: JWT guard (Bearer, access secret), optional guard, `@CurrentUser()`; RabbitMQ queue options shared by publisher and consumer; consumer helper (ack, 3 attempts, then reject into the DLQ).
+- `libs/common`: JWT guard (Bearer, access secret), optional guard, `@CurrentUser()`; RabbitMQ queue options shared by publisher and consumer; consumer helper (ack; a malformed message goes straight to the DLQ; other failures are retried with backoff, then requeued).
 - Users: profiles migration; `user.created` consumer (I5); `GET me`, `GET by-username`, `GET username-available` with suggestions (I8), `POST me/onboarding`; internal user-by-id.
 - Web: register, login and onboarding pages, with the live username check on register and onboarding; Zustand session; fetch wrapper (Bearer, refresh on 401, retry once, else log out); session restore on page load; profile polling; redirect to `/login` on pages that need it; logout.
 - **Done when:**
@@ -90,7 +90,8 @@ With Google, the callback logs in a known Google account. For a new one it creat
   - typing a taken username shows "taken" with up to 3 free suggestions;
   - with `users` stopped, the live check can't answer and doesn't block: two signups with the same username both succeed, and after `users` starts, exactly one has the name while the other lands on `/onboarding`;
   - with RabbitMQ stopped, signup still succeeds and the web app shows the profile error state after 5 attempts;
-  - a message that always fails ends up in `users_events.dlq` after 3 attempts;
+  - a malformed message ends up in `users_events.dlq` at once;
+  - with `users-db` stopped, signup succeeds and the profile appears once the database is back;
   - with Google keys set, a user who abandons onboarding lands on `/onboarding` again on the next visit.
 
 ### 2. Social graph

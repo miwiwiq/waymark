@@ -1,5 +1,6 @@
 import {
   handleWithRetry,
+  InvalidMessageError,
   isBirthDate,
   USER_CREATED,
   USERNAME_PATTERN,
@@ -24,7 +25,7 @@ export class UserCreatedConsumer {
   }
 }
 
-/** Rejects malformed messages; after the retries they end up in the DLQ. */
+/** Rejects malformed messages; they go straight to the DLQ. */
 function parseUserCreated(data: unknown): UserCreatedEvent {
   const event = data as Partial<UserCreatedEvent> | null;
   const valid =
@@ -34,7 +35,7 @@ function parseUserCreated(data: unknown): UserCreatedEvent {
       (typeof event.username === 'string' && USERNAME_PATTERN.test(event.username))) &&
     (event.dateOfBirth === null || isBirthDate(event.dateOfBirth));
   if (!valid) {
-    throw new Error(`Invalid ${USER_CREATED} payload: ${JSON.stringify(data)}`);
+    throw new InvalidMessageError(`Invalid ${USER_CREATED} payload: ${JSON.stringify(data)}`);
   }
   return event as UserCreatedEvent;
 }
