@@ -11,7 +11,9 @@ import { isCountryCode } from "@/lib/countries";
 import { findCoordinates, type Coordinates } from "@/lib/geocode";
 import { readMediaMeta } from "@/lib/media-meta";
 import { formatCoordinates, MAX_MEDIA, MEDIA_RULES, uploadFiles, type Post } from "@/lib/posts";
+import { dateSchema } from "@/lib/validation";
 import { CountryPicker } from "./country-picker";
+import { DateInput } from "./date-input";
 import { Button, buttonStyles, Field, FormError, Input, Textarea } from "./ui";
 
 const schema = z
@@ -20,8 +22,8 @@ const schema = z
     caption: z.string().trim().max(2200, "At most 2200 characters"),
     country: z.string().regex(/^[A-Z]{2}$/, "Choose a country"),
     city: z.string().trim().min(1, "Enter the city").max(80),
-    tripStart: z.string().min(1, "When did the trip start?"),
-    tripEnd: z.string().min(1, "When did it end?"),
+    tripStart: dateSchema("When did the trip start?"),
+    tripEnd: dateSchema("When did it end?"),
   })
   .refine((values) => values.tripEnd >= values.tripStart, {
     path: ["tripEnd"],
@@ -85,6 +87,8 @@ export function PostForm({
   });
   const [country, city, tripStart] = useWatch({ control, name: ["country", "city", "tripStart"] });
   const { field: countryField } = useController({ control, name: "country" });
+  const { field: tripStartField } = useController({ control, name: "tripStart" });
+  const { field: tripEndField } = useController({ control, name: "tripEnd" });
   const coordinates = found && found.place === placeOf(country, city) ? found : null;
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -192,10 +196,15 @@ export function PostForm({
       <MapLocation country={country} city={city} coordinates={coordinates} onFound={setFound} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Trip start" required error={errors.tripStart?.message}>
-          <Input type="date" {...register("tripStart")} />
+          <DateInput {...tripStartField} aria-invalid={errors.tripStart !== undefined} />
         </Field>
         <Field label="Trip end" required error={errors.tripEnd?.message}>
-          <Input type="date" min={tripStart || undefined} {...register("tripEnd")} />
+          <DateInput
+            {...tripEndField}
+            align="right"
+            min={/^\d{4}-\d{2}-\d{2}$/.test(tripStart) ? tripStart : undefined}
+            aria-invalid={errors.tripEnd !== undefined}
+          />
         </Field>
       </div>
       <Field label="Story" optional error={errors.caption?.message}>

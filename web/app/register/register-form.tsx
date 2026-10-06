@@ -3,8 +3,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { DateInput } from "@/components/date-input";
 import { GoogleButton } from "@/components/google-button";
 import { AuthCard, Button, Field, FormError, Input } from "@/components/ui";
 import { UsernameField } from "@/components/username-field";
@@ -73,7 +74,11 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
           error={errors.dateOfBirth?.message}
           hint={<span className="opacity-60">Only you can see it.</span>}
         >
-          <Input type="date" max={today()} {...register("dateOfBirth")} />
+          <Controller
+            control={control}
+            name="dateOfBirth"
+            render={({ field }) => <DateInput {...field} max={today()} autoComplete="bday" aria-invalid={Boolean(errors.dateOfBirth)} />}
+          />
         </Field>
         <Button type="submit" disabled={isSubmitting}>
           Sign up

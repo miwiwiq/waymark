@@ -2,8 +2,9 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { DateInput } from "@/components/date-input";
 import { ProfileGate } from "@/components/profile-gate";
 import { Button, Field, FormError, Input, Page, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -95,7 +96,11 @@ function SettingsForm({ profile }: { profile: MyProfile }) {
           error={errors.dateOfBirth?.message}
           hint={<span className="opacity-60">Only you can see your date of birth.</span>}
         >
-          <Input type="date" max={today()} {...register("dateOfBirth")} />
+          <Controller
+            control={control}
+            name="dateOfBirth"
+            render={({ field }) => <DateInput {...field} max={today()} autoComplete="bday" aria-invalid={Boolean(errors.dateOfBirth)} />}
+          />
         </Field>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" className="mt-1" {...register("isPrivate")} />

@@ -16,3 +16,6 @@ coverage/
 .vscode/
 .DS_Store
 *.log
+
+# local Docker overrides (e.g. database ports for DBeaver)
+docker-compose.override.yml

@@ -1,4 +1,4 @@
-import type { ComponentProps, CSSProperties, MouseEvent, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { initials, userColor } from "@/lib/identity";
 
 // Two content widths (W5): narrow for forms, wide for content. The header uses the wide one.
@@ -71,19 +71,8 @@ export function Field({
 export const CONTROL =
   "rounded-md border border-neutral-300 bg-transparent px-3 py-2 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:focus:border-neutral-100";
 
-/** Date inputs open their calendar on any click, not just on the small icon. */
-export function Input({ className = "", onClick, ...props }: ComponentProps<"input">) {
-  function handleClick(event: MouseEvent<HTMLInputElement>) {
-    onClick?.(event);
-    if (props.type === "date") {
-      try {
-        event.currentTarget.showPicker();
-      } catch {
-        // Not supported or not allowed here; the icon still works.
-      }
-    }
-  }
-  return <input {...props} onClick={handleClick} className={`${CONTROL} ${className}`} />;
+export function Input({ className = "", ...props }: ComponentProps<"input">) {
+  return <input {...props} className={`${CONTROL} ${className}`} />;
 }
 
 export function Textarea(props: ComponentProps<"textarea">) {

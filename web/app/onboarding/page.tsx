@@ -3,10 +3,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { DateInput } from "@/components/date-input";
 import { ProfileGate } from "@/components/profile-gate";
-import { AuthCard, Button, Field, FormError, Input } from "@/components/ui";
+import { AuthCard, Button, Field, FormError } from "@/components/ui";
 import { UsernameField } from "@/components/username-field";
 import { ApiError, apiFetch } from "@/lib/api";
 import { myProfileKey, type MyProfile } from "@/lib/profile";
@@ -79,7 +80,11 @@ function OnboardingForm({ profile }: { profile: MyProfile }) {
             error={errors.dateOfBirth?.message}
             hint={<span className="opacity-60">Only you can see it.</span>}
           >
-            <Input type="date" max={today()} {...register("dateOfBirth")} />
+            <Controller
+              control={control}
+              name="dateOfBirth"
+              render={({ field }) => <DateInput {...field} max={today()} autoComplete="bday" aria-invalid={Boolean(errors.dateOfBirth)} />}
+            />
           </Field>
         )}
         <Button type="submit" disabled={isSubmitting}>
